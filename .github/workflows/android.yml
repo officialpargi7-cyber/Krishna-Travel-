@@ -28,25 +28,11 @@ jobs:
         with:
           gradle-version: '9.3.1'
 
-      - name: Find Android Project
-        run: |
-          PROJECT_DIR=$(find . -name settings.gradle.kts \
-            -not -path "*/.gradle/*" \
-            -printf '%h\n' | head -n 1)
-
-          if [ -z "$PROJECT_DIR" ]; then
-            echo "ERROR: Android project not found"
-            exit 1
-          fi
-
-          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
-          echo "Found project at $PROJECT_DIR"
-
       - name: Build Krishna Travels
-        run: gradle -p "$PROJECT_DIR" assembleDebug
+        run: gradle assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Krishna-Travels-APK
-          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
+          path: build/outputs/apk/debug/*.apk
