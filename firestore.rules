@@ -1,0 +1,649 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global safety net: deny everything by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- GLOBAL HELPERS ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidMemberList(uids) {
+      return uids is list && uids.size() >= 1 && uids.size() <= 40 && uids[0] is string;
+    }
+
+    function isValidRole(role) {
+      return role in ['owner', 'manager'];
+    }
+
+    // --- EXCLUSIVE 10-ACCOUNT VERIFICATION (5 OWNERS + 5 MANAGERS ONLY) ---
+    function isAuthorizedOwnerSlot(username, digest) {
+      return (username == 'krishna_owner1' && digest == 'eb176276dc9843e85a38394ffe8bd49fff56dcab686e0a78a7bc1a7a3ecf242f') ||
+             (username == 'krishna_owner2' && digest == '4e7fefa0dbc087a2614ec20573a74175527e8fe39e04387fb16d12f70d072d0f') ||
+             (username == 'krishna_owner3' && digest == '4554e8796d371dfac957850cdee52c114d0f062674f2e79a564f99a42474831a') ||
+             (username == 'krishna_owner4' && digest == '1d22212b7bbb96800932136f03342869aa9414ca4f6eac96d54f5a6f779708c6') ||
+             (username == 'krishna_owner5' && digest == 'c091ca928f644accc24017f1eb9a957a6491aed2af37a5982da19b93a77a649f');
+    }
+
+    function isAuthorizedManagerSlot(username, digest) {
+      return (username == 'krishna_mgr1' && digest == '3235c408a42c1f27ddd0a00bc1c8d7c916a77bf07c30ced88568369187c85954') ||
+             (username == 'krishna_mgr2' && digest == '4e1b6f6e6ccf0123c9cf3f95518cfab8b7d25a88e4ece470767bdca7e3f97a9f') ||
+             (username == 'krishna_mgr3' && digest == '6a8ebe5856f4c823188cb969e08be020b8272c9f5d8a00ec7e4e6ef989a7b0c4') ||
+             (username == 'krishna_mgr4' && digest == '5b4182e766fa24ad4e0f7ecd8c0736bb2b667d0430a6fdee2ea59517ee80eb23') ||
+             (username == 'krishna_mgr5' && digest == 'b1ff6c53228fbb8ebae266e13aa384e831d8518f1a25e9a6efb1366a0be26a50');
+    }
+
+    function isAuthorizedSlotForRole(username, digest, role) {
+      return (role == 'owner' && isAuthorizedOwnerSlot(username, digest)) ||
+             (role == 'manager' && isAuthorizedManagerSlot(username, digest));
+    }
+
+    function isFleetMember(fleetId) {
+      return isSignedIn() &&
+             exists(/databases/$(database)/documents/fleets/$(fleetId)/members/$(request.auth.uid));
+    }
+
+    function isFleetOwner(fleetId) {
+      return isSignedIn() &&
+             exists(/databases/$(database)/documents/fleets/$(fleetId)/members/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/fleets/$(fleetId)/members/$(request.auth.uid)).data.role == 'owner';
+    }
+
+    // --- VALIDATION BLUEPRINTS ---
+
+    function isValidUserProfile(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 100 &&
+             data.email is string && data.email.size() >= 0 && data.email.size() <= 150 &&
+             (!('activeFleetId' in data) || (data.activeFleetId is string && data.activeFleetId.size() <= 128)) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidUserMembership(data) {
+      return data.fleetId == 'fleet_krishna_travels_hq' &&
+             data.fleetName is string && data.fleetName.size() >= 1 && data.fleetName.size() <= 100 &&
+             data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             isValidRole(data.role) &&
+             data.slotUsername is string && data.slotUsername.size() >= 4 && data.slotUsername.size() <= 40 &&
+             data.slotAuthDigest is string && data.slotAuthDigest.size() == 64 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidFleetAccessRegistry(data) {
+      return data.fleetId == 'fleet_krishna_travels_hq' &&
+             data.fleetName is string && data.fleetName.size() >= 2 && data.fleetName.size() <= 100 &&
+             data.initializedBy is string && data.initializedBy.size() >= 1 && data.initializedBy.size() <= 128 &&
+             data.ownerUids is list && data.ownerUids.size() >= 1 && data.ownerUids.size() <= 15 && data.ownerUids[0] is string &&
+             data.slotUsername is string && data.slotUsername.size() >= 4 && data.slotUsername.size() <= 40 &&
+             data.slotAuthDigest is string && data.slotAuthDigest.size() == 64 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidFleet(data) {
+      return data.name is string && data.name.size() >= 2 && data.name.size() <= 100 &&
+             data.createdBy is string && data.createdBy.size() >= 1 && data.createdBy.size() <= 128 &&
+             data.ownerUids is list && data.ownerUids.size() >= 1 && data.ownerUids.size() <= 15 && data.ownerUids[0] is string &&
+             isValidMemberList(data.memberUids) &&
+             (!('slotUsername' in data) || (data.slotUsername is string && data.slotUsername.size() <= 40)) &&
+             (!('slotAuthDigest' in data) || (data.slotAuthDigest is string && data.slotAuthDigest.size() == 64)) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidFleetMember(data) {
+      return data.fleetId == 'fleet_krishna_travels_hq' &&
+             data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 100 &&
+             (!('email' in data) || (data.email is string && data.email.size() <= 150)) &&
+             isValidRole(data.role) &&
+             data.slotUsername is string && data.slotUsername.size() >= 4 && data.slotUsername.size() <= 40 &&
+             data.slotAuthDigest is string && data.slotAuthDigest.size() == 64 &&
+             data.ownerUids is list && data.ownerUids.size() >= 1 && data.ownerUids.size() <= 15 && data.ownerUids[0] is string &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidBus(data) {
+      return data.fleetId is string && isValidId(data.fleetId) &&
+             data.busNumber is string && data.busNumber.size() >= 2 && data.busNumber.size() <= 30 &&
+             data.coachName is string && data.coachName.size() >= 1 && data.coachName.size() <= 80 &&
+             data.totalCabins is int && data.totalCabins >= 1 && data.totalCabins <= 60 &&
+             (!('defaultRoute' in data) || (data.defaultRoute is string && data.defaultRoute.size() <= 100)) &&
+             data.active is bool &&
+             isValidMemberList(data.memberUids) &&
+             data.createdByUid is string && data.createdByUid.size() >= 1 && data.createdByUid.size() <= 128 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidTrip(data) {
+      return data.fleetId is string && isValidId(data.fleetId) &&
+             data.busId is string && isValidId(data.busId) &&
+             data.busNumber is string && data.busNumber.size() >= 2 && data.busNumber.size() <= 30 &&
+             data.routeName is string && data.routeName.size() >= 2 && data.routeName.size() <= 120 &&
+             data.origin is string && data.origin.size() >= 1 && data.origin.size() <= 60 &&
+             data.destination is string && data.destination.size() >= 1 && data.destination.size() <= 60 &&
+             data.tripDate is string && data.tripDate.size() >= 4 && data.tripDate.size() <= 30 &&
+             data.departureTime is string && data.departureTime.size() >= 2 && data.departureTime.size() <= 20 &&
+             data.driverName is string && data.driverName.size() >= 1 && data.driverName.size() <= 80 &&
+             (!('conductorName' in data) || (data.conductorName is string && data.conductorName.size() <= 80)) &&
+             data.status in ['scheduled', 'in_progress', 'completed'] &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() <= 300)) &&
+             isValidMemberList(data.memberUids) &&
+             data.createdByUid is string && data.createdByUid.size() >= 1 && data.createdByUid.size() <= 128 &&
+             data.createdByName is string && data.createdByName.size() >= 1 && data.createdByName.size() <= 100 &&
+             isValidRole(data.createdByRole) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidStaffAttendance(data) {
+      return data.fleetId is string && isValidId(data.fleetId) &&
+             data.tripId is string && isValidId(data.tripId) &&
+             data.staffName is string && data.staffName.size() >= 1 && data.staffName.size() <= 100 &&
+             data.staffRole in ['Driver', 'Conductor', 'Helper', 'Cleaner'] &&
+             data.status in ['Present', 'Late', 'Half-Day'] &&
+             data.photoBase64 is string && data.photoBase64.size() >= 1 && data.photoBase64.size() <= 300000 &&
+             (!('capturedLatitude' in data) || (data.capturedLatitude is number && data.capturedLatitude >= -90 && data.capturedLatitude <= 90)) &&
+             (!('capturedLongitude' in data) || (data.capturedLongitude is number && data.capturedLongitude >= -180 && data.capturedLongitude <= 180)) &&
+             (!('capturedLocationLabel' in data) || (data.capturedLocationLabel is string && data.capturedLocationLabel.size() <= 200)) &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() <= 250)) &&
+             isValidMemberList(data.memberUids) &&
+             data.createdByUid is string && data.createdByUid.size() >= 1 && data.createdByUid.size() <= 128 &&
+             data.createdByName is string && data.createdByName.size() >= 1 && data.createdByName.size() <= 100 &&
+             isValidRole(data.createdByRole) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidTripExpense(data) {
+      return data.fleetId is string && isValidId(data.fleetId) &&
+             data.tripId is string && isValidId(data.tripId) &&
+             data.category in ['Diesel', 'Toll', 'Tax', 'Maintenance', 'Allowance', 'Other'] &&
+             data.amount is number && data.amount > 0 &&
+             (!('liters' in data) || (data.liters is number && data.liters >= 0)) &&
+             (!('ratePerLiter' in data) || (data.ratePerLiter is number && data.ratePerLiter >= 0)) &&
+             (!('odometerKm' in data) || (data.odometerKm is number && data.odometerKm >= 0)) &&
+             (!('vendorOrPlaza' in data) || (data.vendorOrPlaza is string && data.vendorOrPlaza.size() <= 120)) &&
+             data.paymentMode in ['Cash', 'FASTag', 'UPI', 'Card'] &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() <= 300)) &&
+             (!('receiptPhotoBase64' in data) || (data.receiptPhotoBase64 is string && data.receiptPhotoBase64.size() <= 300000)) &&
+             (!('capturedLatitude' in data) || (data.capturedLatitude is number && data.capturedLatitude >= -90 && data.capturedLatitude <= 90)) &&
+             (!('capturedLongitude' in data) || (data.capturedLongitude is number && data.capturedLongitude >= -180 && data.capturedLongitude <= 180)) &&
+             (!('capturedLocationLabel' in data) || (data.capturedLocationLabel is string && data.capturedLocationLabel.size() <= 200)) &&
+             isValidMemberList(data.memberUids) &&
+             data.createdByUid is string && data.createdByUid.size() >= 1 && data.createdByUid.size() <= 128 &&
+             data.createdByName is string && data.createdByName.size() >= 1 && data.createdByName.size() <= 100 &&
+             isValidRole(data.createdByRole) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidPassengerBooking(data) {
+      return data.fleetId is string && isValidId(data.fleetId) &&
+             data.tripId is string && isValidId(data.tripId) &&
+             data.invoiceNumber is string && data.invoiceNumber.size() >= 3 && data.invoiceNumber.size() <= 40 &&
+             data.passengerName is string && data.passengerName.size() >= 1 && data.passengerName.size() <= 100 &&
+             (!('passengerPhone' in data) || (data.passengerPhone is string && data.passengerPhone.size() <= 20)) &&
+             data.cabinNumbers is list && data.cabinNumbers.size() >= 1 && data.cabinNumbers.size() <= 30 && data.cabinNumbers[0] is int &&
+             data.berthNumbers is string && data.berthNumbers.size() >= 1 && data.berthNumbers.size() <= 80 &&
+             data.seatCount is int && data.seatCount >= 1 && data.seatCount <= 30 &&
+             data.boardingPoint is string && data.boardingPoint.size() >= 1 && data.boardingPoint.size() <= 100 &&
+             data.droppingPoint is string && data.droppingPoint.size() >= 1 && data.droppingPoint.size() <= 100 &&
+             data.fareAmount is number && data.fareAmount >= 0 &&
+             data.paidAmount is number && data.paidAmount >= 0 &&
+             data.paymentStatus in ['Paid', 'Pending', 'Partial'] &&
+             data.paymentMode in ['Cash', 'UPI', 'Online'] &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() <= 200)) &&
+             isValidMemberList(data.memberUids) &&
+             data.createdByUid is string && data.createdByUid.size() >= 1 && data.createdByUid.size() <= 128 &&
+             data.createdByName is string && data.createdByName.size() >= 1 && data.createdByName.size() <= 100 &&
+             isValidRole(data.createdByRole) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidCompartmentPhoto(data) {
+      return data.fleetId is string && isValidId(data.fleetId) &&
+             data.tripId is string && isValidId(data.tripId) &&
+             data.cabinNumber is int && data.cabinNumber >= 1 && data.cabinNumber <= 30 &&
+             data.berthLabel is string && data.berthLabel.size() >= 1 && data.berthLabel.size() <= 80 &&
+             (!('passengerName' in data) || (data.passengerName is string && data.passengerName.size() <= 100)) &&
+             (!('conditionNote' in data) || (data.conditionNote is string && data.conditionNote.size() <= 250)) &&
+             data.photoBase64 is string && data.photoBase64.size() >= 1 && data.photoBase64.size() <= 300000 &&
+             (!('capturedLatitude' in data) || (data.capturedLatitude is number && data.capturedLatitude >= -90 && data.capturedLatitude <= 90)) &&
+             (!('capturedLongitude' in data) || (data.capturedLongitude is number && data.capturedLongitude >= -180 && data.capturedLongitude <= 180)) &&
+             (!('capturedLocationLabel' in data) || (data.capturedLocationLabel is string && data.capturedLocationLabel.size() <= 200)) &&
+             data.verifiedByOwner is bool &&
+             isValidMemberList(data.memberUids) &&
+             data.createdByUid is string && data.createdByUid.size() >= 1 && data.createdByUid.size() <= 128 &&
+             data.createdByName is string && data.createdByName.size() >= 1 && data.createdByName.size() <= 100 &&
+             isValidRole(data.createdByRole) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidNoFareRecord(data) {
+      return data.fleetId is string && isValidId(data.fleetId) &&
+             data.tripId is string && isValidId(data.tripId) &&
+             data.personName is string && data.personName.size() >= 1 && data.personName.size() <= 100 &&
+             data.mobileNumber is string && data.mobileNumber.size() >= 1 && data.mobileNumber.size() <= 20 &&
+             (!('cabinNumber' in data) || (data.cabinNumber is int && data.cabinNumber >= 0 && data.cabinNumber <= 30)) &&
+             (!('expectedFare' in data) || (data.expectedFare is number && data.expectedFare >= 0)) &&
+             (!('reasonOrNote' in data) || (data.reasonOrNote is string && data.reasonOrNote.size() <= 250)) &&
+             (!('photoBase64' in data) || (data.photoBase64 is string && data.photoBase64.size() <= 300000)) &&
+             (!('capturedLatitude' in data) || (data.capturedLatitude is number && data.capturedLatitude >= -90 && data.capturedLatitude <= 90)) &&
+             (!('capturedLongitude' in data) || (data.capturedLongitude is number && data.capturedLongitude >= -180 && data.capturedLongitude <= 180)) &&
+             (!('capturedLocationLabel' in data) || (data.capturedLocationLabel is string && data.capturedLocationLabel.size() <= 200)) &&
+             data.resolvedByOwner is bool &&
+             isValidMemberList(data.memberUids) &&
+             data.createdByUid is string && data.createdByUid.size() >= 1 && data.createdByUid.size() <= 128 &&
+             data.createdByName is string && data.createdByName.size() >= 1 && data.createdByName.size() <= 100 &&
+             isValidRole(data.createdByRole) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    // --- COLLECTION RULES ---
+
+    match /users/{userId} {
+      allow get, list: if isSignedIn() && request.auth.uid == userId;
+
+      allow create: if isSignedIn() &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll(['userId', 'displayName', 'email', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'displayName', 'email', 'activeFleetId', 'createdAt', 'updatedAt']) &&
+                       isValidUserProfile(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       isValidUserProfile(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'email', 'activeFleetId', 'updatedAt']);
+
+      allow delete: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+
+      match /memberships/{fleetId} {
+        allow get, list: if isSignedIn() && request.auth.uid == userId;
+
+        // Only the 10 verified (username, sha256Digest, role) accounts may create a membership
+        allow create: if isSignedIn() &&
+                         isValidId(userId) &&
+                         fleetId == 'fleet_krishna_travels_hq' &&
+                         request.auth.uid == userId &&
+                         incoming().userId == userId &&
+                         incoming().fleetId == fleetId &&
+                         incoming().keys().hasAll(['fleetId', 'fleetName', 'userId', 'role', 'slotUsername', 'slotAuthDigest', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['fleetId', 'fleetName', 'userId', 'role', 'slotUsername', 'slotAuthDigest', 'createdAt', 'updatedAt']) &&
+                         isValidUserMembership(incoming()) &&
+                         isAuthorizedSlotForRole(incoming().slotUsername, incoming().slotAuthDigest, incoming().role);
+
+        allow update: if isSignedIn() &&
+                         isValidId(userId) &&
+                         fleetId == 'fleet_krishna_travels_hq' &&
+                         isValidUserMembership(incoming()) &&
+                         incoming().userId == existing().userId &&
+                         incoming().fleetId == existing().fleetId &&
+                         incoming().createdAt == existing().createdAt &&
+                         (
+                           isFleetOwner(fleetId) ||
+                           (request.auth.uid == userId &&
+                            isAuthorizedSlotForRole(incoming().slotUsername, incoming().slotAuthDigest, incoming().role))
+                         ) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['fleetName', 'role', 'slotUsername', 'slotAuthDigest', 'updatedAt']);
+
+        allow delete: if isSignedIn() && isValidId(userId) && isValidId(fleetId) &&
+                         (request.auth.uid == userId || isFleetOwner(fleetId));
+      }
+    }
+
+    match /fleet_access_registry/{registryId} {
+      allow get: if isSignedIn() && registryId == 'krishna_hq';
+      allow list: if false;
+
+      allow create: if isSignedIn() &&
+                       registryId == 'krishna_hq' &&
+                       incoming().keys().hasAll(['fleetId', 'fleetName', 'initializedBy', 'ownerUids', 'slotUsername', 'slotAuthDigest', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['fleetId', 'fleetName', 'initializedBy', 'ownerUids', 'slotUsername', 'slotAuthDigest', 'createdAt', 'updatedAt']) &&
+                       isValidFleetAccessRegistry(incoming()) &&
+                       incoming().initializedBy == request.auth.uid &&
+                       incoming().ownerUids.size() == 1 &&
+                       incoming().ownerUids[0] == request.auth.uid &&
+                       isAuthorizedOwnerSlot(incoming().slotUsername, incoming().slotAuthDigest);
+
+      allow update: if isSignedIn() &&
+                       registryId == 'krishna_hq' &&
+                       isValidFleetAccessRegistry(incoming()) &&
+                       isFleetOwner('fleet_krishna_travels_hq') &&
+                       incoming().fleetId == existing().fleetId &&
+                       incoming().initializedBy == existing().initializedBy &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['ownerUids', 'updatedAt']);
+
+      allow delete: if false;
+    }
+
+    match /fleets/{fleetId} {
+      allow get: if isSignedIn() && isValidId(fleetId) &&
+                    ((resource != null && request.auth.uid in existing().memberUids) || isFleetMember(fleetId));
+      allow list: if isSignedIn() && request.auth.uid in existing().memberUids;
+
+      // Only one of the 5 verified Owner accounts can initialize the shared Krishna Travels fleet
+      allow create: if isSignedIn() &&
+                       fleetId == 'fleet_krishna_travels_hq' &&
+                       incoming().keys().hasAll(['name', 'createdBy', 'ownerUids', 'memberUids', 'slotUsername', 'slotAuthDigest', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['name', 'createdBy', 'ownerUids', 'memberUids', 'slotUsername', 'slotAuthDigest', 'createdAt', 'updatedAt']) &&
+                       isValidFleet(incoming()) &&
+                       incoming().createdBy == request.auth.uid &&
+                       incoming().ownerUids.size() == 1 &&
+                       incoming().ownerUids[0] == request.auth.uid &&
+                       incoming().memberUids.size() == 1 &&
+                       incoming().memberUids[0] == request.auth.uid &&
+                       isAuthorizedOwnerSlot(incoming().slotUsername, incoming().slotAuthDigest);
+
+      allow update: if isSignedIn() &&
+                       fleetId == 'fleet_krishna_travels_hq' &&
+                       isValidFleet(incoming()) &&
+                       incoming().createdBy == existing().createdBy &&
+                       incoming().createdAt == existing().createdAt &&
+                       (
+                         (isFleetOwner(fleetId) &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['name', 'ownerUids', 'memberUids', 'updatedAt'])) ||
+                         (isFleetMember(fleetId) &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['memberUids', 'updatedAt']) &&
+                          incoming().memberUids.hasAll(existing().memberUids) &&
+                          incoming().memberUids.size() <= existing().memberUids.size() + 1 &&
+                          request.auth.uid in incoming().memberUids &&
+                          incoming().ownerUids == existing().ownerUids)
+                       );
+
+      allow delete: if isSignedIn() && isValidId(fleetId) && isFleetOwner(fleetId);
+
+      // Owner-only vault (Managers receive PERMISSION_DENIED)
+      match /owner_vault/{docId} {
+        allow read, write: if isSignedIn() && isValidId(fleetId) && isValidId(docId) && isFleetOwner(fleetId);
+      }
+
+      match /members/{memberUid} {
+        allow get: if isSignedIn() && isValidId(fleetId) && isValidId(memberUid) &&
+                      (request.auth.uid == memberUid || isFleetOwner(fleetId));
+        allow list: if isSignedIn() &&
+                       (isFleetOwner(fleetId) || request.auth.uid in existing().ownerUids || request.auth.uid == existing().userId);
+
+        allow create: if isSignedIn() &&
+                         fleetId == 'fleet_krishna_travels_hq' &&
+                         isValidId(memberUid) &&
+                         incoming().fleetId == fleetId &&
+                         incoming().userId == memberUid &&
+                         incoming().keys().hasAll(['fleetId', 'userId', 'displayName', 'role', 'slotUsername', 'slotAuthDigest', 'ownerUids', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['fleetId', 'userId', 'displayName', 'email', 'role', 'slotUsername', 'slotAuthDigest', 'ownerUids', 'createdAt', 'updatedAt']) &&
+                         isValidFleetMember(incoming()) &&
+                         (
+                           (memberUid == request.auth.uid &&
+                            isAuthorizedSlotForRole(incoming().slotUsername, incoming().slotAuthDigest, incoming().role)) ||
+                           isFleetOwner(fleetId)
+                         );
+
+        allow update: if isSignedIn() &&
+                         fleetId == 'fleet_krishna_travels_hq' &&
+                         isValidId(memberUid) &&
+                         isValidFleetMember(incoming()) &&
+                         incoming().fleetId == existing().fleetId &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         (
+                           isFleetOwner(fleetId) ||
+                           (memberUid == request.auth.uid &&
+                            isAuthorizedSlotForRole(incoming().slotUsername, incoming().slotAuthDigest, incoming().role))
+                         ) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'email', 'role', 'slotUsername', 'slotAuthDigest', 'ownerUids', 'updatedAt']);
+
+        allow delete: if isSignedIn() && isValidId(fleetId) && isValidId(memberUid) && isFleetOwner(fleetId);
+      }
+
+      match /buses/{busId} {
+        allow get: if isSignedIn() && isValidId(fleetId) && isValidId(busId) &&
+                      ((resource != null && request.auth.uid in existing().memberUids) || isFleetMember(fleetId));
+        allow list: if isSignedIn() && request.auth.uid in existing().memberUids;
+
+        allow create: if isSignedIn() &&
+                         isValidId(fleetId) &&
+                         isValidId(busId) &&
+                         incoming().fleetId == fleetId &&
+                         incoming().createdByUid == request.auth.uid &&
+                         incoming().keys().hasAll(['fleetId', 'busNumber', 'coachName', 'totalCabins', 'active', 'memberUids', 'createdByUid', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['fleetId', 'busNumber', 'coachName', 'totalCabins', 'defaultRoute', 'active', 'memberUids', 'createdByUid', 'createdAt', 'updatedAt']) &&
+                         isValidBus(incoming()) &&
+                         isFleetOwner(fleetId);
+
+        allow update: if isSignedIn() &&
+                         isValidId(fleetId) &&
+                         isValidId(busId) &&
+                         isValidBus(incoming()) &&
+                         isFleetOwner(fleetId) &&
+                         incoming().fleetId == existing().fleetId &&
+                         incoming().createdByUid == existing().createdByUid &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['busNumber', 'coachName', 'totalCabins', 'defaultRoute', 'active', 'memberUids', 'updatedAt']);
+
+        allow delete: if isSignedIn() && isValidId(fleetId) && isValidId(busId) && isFleetOwner(fleetId);
+      }
+
+      match /trips/{tripId} {
+        allow get: if isSignedIn() && isValidId(fleetId) && isValidId(tripId) &&
+                      ((resource != null && request.auth.uid in existing().memberUids) || isFleetMember(fleetId));
+        allow list: if isSignedIn() && request.auth.uid in existing().memberUids;
+
+        allow create: if isSignedIn() &&
+                         isValidId(fleetId) &&
+                         isValidId(tripId) &&
+                         incoming().fleetId == fleetId &&
+                         incoming().createdByUid == request.auth.uid &&
+                         incoming().keys().hasAll(['fleetId', 'busId', 'busNumber', 'routeName', 'origin', 'destination', 'tripDate', 'departureTime', 'driverName', 'status', 'memberUids', 'createdByUid', 'createdByName', 'createdByRole', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['fleetId', 'busId', 'busNumber', 'routeName', 'origin', 'destination', 'tripDate', 'departureTime', 'driverName', 'conductorName', 'status', 'notes', 'memberUids', 'createdByUid', 'createdByName', 'createdByRole', 'createdAt', 'updatedAt']) &&
+                         isValidTrip(incoming()) &&
+                         isFleetMember(fleetId) &&
+                         exists(/databases/$(database)/documents/fleets/$(fleetId)/buses/$(incoming().busId));
+
+        // STRICT IMMUTABILITY FOR MANAGERS: Only Owners can update or delete trips
+        allow update: if isSignedIn() &&
+                         isValidId(fleetId) &&
+                         isValidId(tripId) &&
+                         isValidTrip(incoming()) &&
+                         isFleetOwner(fleetId) &&
+                         incoming().fleetId == existing().fleetId &&
+                         incoming().createdByUid == existing().createdByUid &&
+                         incoming().createdByRole == existing().createdByRole &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['busId', 'busNumber', 'routeName', 'origin', 'destination', 'tripDate', 'departureTime', 'driverName', 'conductorName', 'status', 'notes', 'memberUids', 'updatedAt']);
+
+        allow delete: if isSignedIn() && isValidId(fleetId) && isValidId(tripId) && isFleetOwner(fleetId);
+      }
+
+      match /attendance/{attendanceId} {
+        allow get: if isSignedIn() && isValidId(fleetId) && isValidId(attendanceId) &&
+                      ((resource != null && request.auth.uid in existing().memberUids) || isFleetMember(fleetId));
+        allow list: if isSignedIn() && request.auth.uid in existing().memberUids;
+
+        allow create: if isSignedIn() &&
+                         isValidId(fleetId) &&
+                         isValidId(attendanceId) &&
+                         incoming().fleetId == fleetId &&
+                         incoming().createdByUid == request.auth.uid &&
+                         incoming().keys().hasAll(['fleetId', 'tripId', 'staffName', 'staffRole', 'status', 'photoBase64', 'memberUids', 'createdByUid', 'createdByName', 'createdByRole', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['fleetId', 'tripId', 'staffName', 'staffRole', 'status', 'photoBase64', 'capturedLatitude', 'capturedLongitude', 'capturedLocationLabel', 'notes', 'memberUids', 'createdByUid', 'createdByName', 'createdByRole', 'createdAt', 'updatedAt']) &&
+                         isValidStaffAttendance(incoming()) &&
+                         isFleetMember(fleetId) &&
+                         exists(/databases/$(database)/documents/fleets/$(fleetId)/trips/$(incoming().tripId));
+
+        // STRICT IMMUTABILITY FOR MANAGERS: Only Owners can update or delete attendance
+        allow update: if isSignedIn() &&
+                         isValidId(fleetId) &&
+                         isValidId(attendanceId) &&
+                         isValidStaffAttendance(incoming()) &&
+                         isFleetOwner(fleetId) &&
+                         incoming().fleetId == existing().fleetId &&
+                         incoming().tripId == existing().tripId &&
+                         incoming().createdByUid == existing().createdByUid &&
+                         incoming().createdByRole == existing().createdByRole &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['staffName', 'staffRole', 'status', 'photoBase64', 'notes', 'memberUids', 'updatedAt']);
+
+        allow delete: if isSignedIn() && isValidId(fleetId) && isValidId(attendanceId) && isFleetOwner(fleetId);
+      }
+
+      match /expenses/{expenseId} {
+        allow get: if isSignedIn() && isValidId(fleetId) && isValidId(expenseId) &&
+                      ((resource != null && request.auth.uid in existing().memberUids) || isFleetMember(fleetId));
+        allow list: if isSignedIn() && request.auth.uid in existing().memberUids;
+
+        allow create: if isSignedIn() &&
+                         isValidId(fleetId) &&
+                         isValidId(expenseId) &&
+                         incoming().fleetId == fleetId &&
+                         incoming().createdByUid == request.auth.uid &&
+                         incoming().keys().hasAll(['fleetId', 'tripId', 'category', 'amount', 'paymentMode', 'memberUids', 'createdByUid', 'createdByName', 'createdByRole', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['fleetId', 'tripId', 'category', 'amount', 'liters', 'ratePerLiter', 'odometerKm', 'vendorOrPlaza', 'paymentMode', 'notes', 'receiptPhotoBase64', 'capturedLatitude', 'capturedLongitude', 'capturedLocationLabel', 'memberUids', 'createdByUid', 'createdByName', 'createdByRole', 'createdAt', 'updatedAt']) &&
+                         isValidTripExpense(incoming()) &&
+                         isFleetMember(fleetId) &&
+                         exists(/databases/$(database)/documents/fleets/$(fleetId)/trips/$(incoming().tripId));
+
+        // STRICT IMMUTABILITY FOR MANAGERS: Only Owners can update or delete expenses
+        allow update: if isSignedIn() &&
+                         isValidId(fleetId) &&
+                         isValidId(expenseId) &&
+                         isValidTripExpense(incoming()) &&
+                         isFleetOwner(fleetId) &&
+                         incoming().fleetId == existing().fleetId &&
+                         incoming().tripId == existing().tripId &&
+                         incoming().createdByUid == existing().createdByUid &&
+                         incoming().createdByRole == existing().createdByRole &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['category', 'amount', 'liters', 'ratePerLiter', 'odometerKm', 'vendorOrPlaza', 'paymentMode', 'notes', 'receiptPhotoBase64', 'memberUids', 'updatedAt']);
+
+        allow delete: if isSignedIn() && isValidId(fleetId) && isValidId(expenseId) && isFleetOwner(fleetId);
+      }
+
+      match /bookings/{bookingId} {
+        allow get: if isSignedIn() && isValidId(fleetId) && isValidId(bookingId) &&
+                      ((resource != null && request.auth.uid in existing().memberUids) || isFleetMember(fleetId));
+        allow list: if isSignedIn() && request.auth.uid in existing().memberUids;
+
+        allow create: if isSignedIn() &&
+                         isValidId(fleetId) &&
+                         isValidId(bookingId) &&
+                         incoming().fleetId == fleetId &&
+                         incoming().createdByUid == request.auth.uid &&
+                         incoming().keys().hasAll(['fleetId', 'tripId', 'invoiceNumber', 'passengerName', 'cabinNumbers', 'berthNumbers', 'seatCount', 'boardingPoint', 'droppingPoint', 'fareAmount', 'paidAmount', 'paymentStatus', 'paymentMode', 'memberUids', 'createdByUid', 'createdByName', 'createdByRole', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['fleetId', 'tripId', 'invoiceNumber', 'passengerName', 'passengerPhone', 'cabinNumbers', 'berthNumbers', 'seatCount', 'boardingPoint', 'droppingPoint', 'fareAmount', 'paidAmount', 'paymentStatus', 'paymentMode', 'notes', 'memberUids', 'createdByUid', 'createdByName', 'createdByRole', 'createdAt', 'updatedAt']) &&
+                         isValidPassengerBooking(incoming()) &&
+                         isFleetMember(fleetId) &&
+                         exists(/databases/$(database)/documents/fleets/$(fleetId)/trips/$(incoming().tripId));
+
+        // STRICT IMMUTABILITY FOR MANAGERS: Only Owners can update or delete bookings
+        allow update: if isSignedIn() &&
+                         isValidId(fleetId) &&
+                         isValidId(bookingId) &&
+                         isValidPassengerBooking(incoming()) &&
+                         isFleetOwner(fleetId) &&
+                         incoming().fleetId == existing().fleetId &&
+                         incoming().tripId == existing().tripId &&
+                         incoming().createdByUid == existing().createdByUid &&
+                         incoming().createdByRole == existing().createdByRole &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['invoiceNumber', 'passengerName', 'passengerPhone', 'cabinNumbers', 'berthNumbers', 'seatCount', 'boardingPoint', 'droppingPoint', 'fareAmount', 'paidAmount', 'paymentStatus', 'paymentMode', 'notes', 'memberUids', 'updatedAt']);
+
+        allow delete: if isSignedIn() && isValidId(fleetId) && isValidId(bookingId) && isFleetOwner(fleetId);
+      }
+
+      match /compartment_photos/{photoId} {
+        allow get: if isSignedIn() && isValidId(fleetId) && isValidId(photoId) &&
+                      ((resource != null && request.auth.uid in existing().memberUids) || isFleetMember(fleetId));
+        allow list: if isSignedIn() && request.auth.uid in existing().memberUids;
+
+        allow create: if isSignedIn() &&
+                         isValidId(fleetId) &&
+                         isValidId(photoId) &&
+                         incoming().fleetId == fleetId &&
+                         incoming().createdByUid == request.auth.uid &&
+                         incoming().keys().hasAll(['fleetId', 'tripId', 'cabinNumber', 'berthLabel', 'photoBase64', 'verifiedByOwner', 'memberUids', 'createdByUid', 'createdByName', 'createdByRole', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['fleetId', 'tripId', 'cabinNumber', 'berthLabel', 'passengerName', 'conditionNote', 'photoBase64', 'capturedLatitude', 'capturedLongitude', 'capturedLocationLabel', 'verifiedByOwner', 'memberUids', 'createdByUid', 'createdByName', 'createdByRole', 'createdAt', 'updatedAt']) &&
+                         isValidCompartmentPhoto(incoming()) &&
+                         (incoming().verifiedByOwner == false || isFleetOwner(fleetId)) &&
+                         isFleetMember(fleetId) &&
+                         exists(/databases/$(database)/documents/fleets/$(fleetId)/trips/$(incoming().tripId));
+
+        // STRICT IMMUTABILITY FOR MANAGERS: Only Owners can update or delete sleeper compartment photos
+        allow update: if isSignedIn() &&
+                         isValidId(fleetId) &&
+                         isValidId(photoId) &&
+                         isValidCompartmentPhoto(incoming()) &&
+                         isFleetOwner(fleetId) &&
+                         incoming().fleetId == existing().fleetId &&
+                         incoming().tripId == existing().tripId &&
+                         incoming().createdByUid == existing().createdByUid &&
+                         incoming().createdByRole == existing().createdByRole &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['cabinNumber', 'berthLabel', 'passengerName', 'conditionNote', 'photoBase64', 'verifiedByOwner', 'memberUids', 'updatedAt']);
+
+        allow delete: if isSignedIn() && isValidId(fleetId) && isValidId(photoId) && isFleetOwner(fleetId);
+      }
+
+      match /no_fare_records/{recordId} {
+        allow get: if isSignedIn() && isValidId(fleetId) && isValidId(recordId) &&
+                      ((resource != null && request.auth.uid in existing().memberUids) || isFleetMember(fleetId));
+        allow list: if isSignedIn() && request.auth.uid in existing().memberUids;
+
+        allow create: if isSignedIn() &&
+                         isValidId(fleetId) &&
+                         isValidId(recordId) &&
+                         incoming().fleetId == fleetId &&
+                         incoming().createdByUid == request.auth.uid &&
+                         incoming().keys().hasAll(['fleetId', 'tripId', 'personName', 'mobileNumber', 'resolvedByOwner', 'memberUids', 'createdByUid', 'createdByName', 'createdByRole', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['fleetId', 'tripId', 'personName', 'mobileNumber', 'cabinNumber', 'expectedFare', 'reasonOrNote', 'photoBase64', 'capturedLatitude', 'capturedLongitude', 'capturedLocationLabel', 'resolvedByOwner', 'memberUids', 'createdByUid', 'createdByName', 'createdByRole', 'createdAt', 'updatedAt']) &&
+                         isValidNoFareRecord(incoming()) &&
+                         (incoming().resolvedByOwner == false || isFleetOwner(fleetId)) &&
+                         isFleetMember(fleetId) &&
+                         exists(/databases/$(database)/documents/fleets/$(fleetId)/trips/$(incoming().tripId));
+
+        // STRICT IMMUTABILITY FOR MANAGERS: Only Owners can update or delete no-fare / upload-history records
+        allow update: if isSignedIn() &&
+                         isValidId(fleetId) &&
+                         isValidId(recordId) &&
+                         isValidNoFareRecord(incoming()) &&
+                         isFleetOwner(fleetId) &&
+                         incoming().fleetId == existing().fleetId &&
+                         incoming().tripId == existing().tripId &&
+                         incoming().createdByUid == existing().createdByUid &&
+                         incoming().createdByRole == existing().createdByRole &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['personName', 'mobileNumber', 'cabinNumber', 'expectedFare', 'reasonOrNote', 'photoBase64', 'resolvedByOwner', 'memberUids', 'updatedAt']);
+
+        allow delete: if isSignedIn() && isValidId(fleetId) && isValidId(recordId) && isFleetOwner(fleetId);
+      }
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Krishna Travels",
+  "description": "Krishna Travels bus fleet and trip operations app for staff attendance with photos, diesel/toll/tax expenses, passenger bookings and billing, sleeper compartment photo verification, per-trip report sharing, and Owner/Manager role access.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

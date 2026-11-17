@@ -1,0 +1,314 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authenticated user profile storing Google identity metadata and active fleet preference.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "activeFleetId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp" }
+      },
+      "required": ["userId", "displayName", "email", "createdAt", "updatedAt"]
+    },
+    "UserMembership": {
+      "title": "UserMembership",
+      "description": "User-scoped index of fleet membership tied to one of the 10 authorized staff accounts.",
+      "type": "object",
+      "properties": {
+        "fleetId": { "type": "string" },
+        "fleetName": { "type": "string" },
+        "userId": { "type": "string" },
+        "role": { "type": "string", "enum": ["owner", "manager"] },
+        "slotUsername": { "type": "string" },
+        "slotAuthDigest": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["fleetId", "fleetName", "userId", "role", "slotUsername", "slotAuthDigest", "createdAt", "updatedAt"]
+    },
+    "FleetAccessRegistry": {
+      "title": "FleetAccessRegistry",
+      "description": "Shared Krishna Travels HQ coordinator allowing the 5 Owners and 5 Managers to discover the initialized fleet.",
+      "type": "object",
+      "properties": {
+        "fleetId": { "type": "string" },
+        "fleetName": { "type": "string" },
+        "initializedBy": { "type": "string" },
+        "ownerUids": { "type": "array" },
+        "slotUsername": { "type": "string" },
+        "slotAuthDigest": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["fleetId", "fleetName", "initializedBy", "ownerUids", "slotUsername", "slotAuthDigest", "createdAt", "updatedAt"]
+    },
+    "Fleet": {
+      "title": "Fleet",
+      "description": "Krishna Travels bus fleet workspace shared by the 5 Owners and 5 Managers.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "ownerUids": { "type": "array" },
+        "memberUids": { "type": "array" },
+        "slotUsername": { "type": "string" },
+        "slotAuthDigest": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "createdBy", "ownerUids", "memberUids", "createdAt", "updatedAt"]
+    },
+    "FleetMember": {
+      "title": "FleetMember",
+      "description": "Authoritative fleet member record specifying owner or manager role and assigned slot username.",
+      "type": "object",
+      "properties": {
+        "fleetId": { "type": "string" },
+        "userId": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["owner", "manager"] },
+        "slotUsername": { "type": "string" },
+        "slotAuthDigest": { "type": "string" },
+        "ownerUids": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["fleetId", "userId", "displayName", "role", "slotUsername", "slotAuthDigest", "ownerUids", "createdAt", "updatedAt"]
+    },
+    "Bus": {
+      "title": "Bus",
+      "description": "Sleeper bus vehicle in the fleet with 30-cabin default configuration.",
+      "type": "object",
+      "properties": {
+        "fleetId": { "type": "string" },
+        "busNumber": { "type": "string" },
+        "coachName": { "type": "string" },
+        "totalCabins": { "type": "integer" },
+        "defaultRoute": { "type": "string" },
+        "active": { "type": "boolean" },
+        "memberUids": { "type": "array" },
+        "createdByUid": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["fleetId", "busNumber", "coachName", "totalCabins", "active", "memberUids", "createdByUid", "createdAt", "updatedAt"]
+    },
+    "Trip": {
+      "title": "Trip",
+      "description": "A single bus trip aggregating staff attendance, diesel/toll/tax expenses, passenger bookings, and 30 sleeper cabin photos.",
+      "type": "object",
+      "properties": {
+        "fleetId": { "type": "string" },
+        "busId": { "type": "string" },
+        "busNumber": { "type": "string" },
+        "routeName": { "type": "string" },
+        "origin": { "type": "string" },
+        "destination": { "type": "string" },
+        "tripDate": { "type": "string" },
+        "departureTime": { "type": "string" },
+        "driverName": { "type": "string" },
+        "conductorName": { "type": "string" },
+        "status": { "type": "string", "enum": ["scheduled", "in_progress", "completed"] },
+        "notes": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "createdByUid": { "type": "string" },
+        "createdByName": { "type": "string" },
+        "createdByRole": { "type": "string", "enum": ["owner", "manager"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["fleetId", "busId", "busNumber", "routeName", "origin", "destination", "tripDate", "departureTime", "driverName", "status", "memberUids", "createdByUid", "createdByName", "createdByRole", "createdAt", "updatedAt"]
+    },
+    "StaffAttendance": {
+      "title": "StaffAttendance",
+      "description": "Per-trip staff attendance log with mandatory photo proof; immutable for managers after upload.",
+      "type": "object",
+      "properties": {
+        "fleetId": { "type": "string" },
+        "tripId": { "type": "string" },
+        "staffName": { "type": "string" },
+        "staffRole": { "type": "string", "enum": ["Driver", "Conductor", "Helper", "Cleaner"] },
+        "status": { "type": "string", "enum": ["Present", "Late", "Half-Day"] },
+        "photoBase64": { "type": "string" },
+        "capturedLatitude": { "type": "number" },
+        "capturedLongitude": { "type": "number" },
+        "capturedLocationLabel": { "type": "string" },
+        "notes": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "createdByUid": { "type": "string" },
+        "createdByName": { "type": "string" },
+        "createdByRole": { "type": "string", "enum": ["owner", "manager"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["fleetId", "tripId", "staffName", "staffRole", "status", "photoBase64", "memberUids", "createdByUid", "createdByName", "createdByRole", "createdAt", "updatedAt"]
+    },
+    "TripExpense": {
+      "title": "TripExpense",
+      "description": "Per-trip diesel, toll, tax, and operational expense record; immutable for managers after upload.",
+      "type": "object",
+      "properties": {
+        "fleetId": { "type": "string" },
+        "tripId": { "type": "string" },
+        "category": { "type": "string", "enum": ["Diesel", "Toll", "Tax", "Maintenance", "Allowance", "Other"] },
+        "amount": { "type": "number" },
+        "liters": { "type": "number" },
+        "ratePerLiter": { "type": "number" },
+        "odometerKm": { "type": "number" },
+        "vendorOrPlaza": { "type": "string" },
+        "paymentMode": { "type": "string", "enum": ["Cash", "FASTag", "UPI", "Card"] },
+        "notes": { "type": "string" },
+        "receiptPhotoBase64": { "type": "string" },
+        "capturedLatitude": { "type": "number" },
+        "capturedLongitude": { "type": "number" },
+        "capturedLocationLabel": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "createdByUid": { "type": "string" },
+        "createdByName": { "type": "string" },
+        "createdByRole": { "type": "string", "enum": ["owner", "manager"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["fleetId", "tripId", "category", "amount", "paymentMode", "memberUids", "createdByUid", "createdByName", "createdByRole", "createdAt", "updatedAt"]
+    },
+    "PassengerBooking": {
+      "title": "PassengerBooking",
+      "description": "Per-trip passenger sleeper cabin booking and billing invoice; immutable for managers after upload.",
+      "type": "object",
+      "properties": {
+        "fleetId": { "type": "string" },
+        "tripId": { "type": "string" },
+        "invoiceNumber": { "type": "string" },
+        "passengerName": { "type": "string" },
+        "passengerPhone": { "type": "string" },
+        "cabinNumbers": { "type": "array" },
+        "berthNumbers": { "type": "string" },
+        "seatCount": { "type": "integer" },
+        "boardingPoint": { "type": "string" },
+        "droppingPoint": { "type": "string" },
+        "fareAmount": { "type": "number" },
+        "paidAmount": { "type": "number" },
+        "paymentStatus": { "type": "string", "enum": ["Paid", "Pending", "Partial"] },
+        "paymentMode": { "type": "string", "enum": ["Cash", "UPI", "Online"] },
+        "notes": { "type": "string" },
+        "memberUids": { "type": "array" },
+        "createdByUid": { "type": "string" },
+        "createdByName": { "type": "string" },
+        "createdByRole": { "type": "string", "enum": ["owner", "manager"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["fleetId", "tripId", "invoiceNumber", "passengerName", "cabinNumbers", "berthNumbers", "seatCount", "boardingPoint", "droppingPoint", "fareAmount", "paidAmount", "paymentStatus", "paymentMode", "memberUids", "createdByUid", "createdByName", "createdByRole", "createdAt", "updatedAt"]
+    },
+    "CompartmentPhoto": {
+      "title": "CompartmentPhoto",
+      "description": "Per-trip sleeper cabin (1-30) passenger confirmation photo; immutable for managers after upload.",
+      "type": "object",
+      "properties": {
+        "fleetId": { "type": "string" },
+        "tripId": { "type": "string" },
+        "cabinNumber": { "type": "integer" },
+        "berthLabel": { "type": "string" },
+        "passengerName": { "type": "string" },
+        "conditionNote": { "type": "string" },
+        "photoBase64": { "type": "string" },
+        "capturedLatitude": { "type": "number" },
+        "capturedLongitude": { "type": "number" },
+        "capturedLocationLabel": { "type": "string" },
+        "verifiedByOwner": { "type": "boolean" },
+        "memberUids": { "type": "array" },
+        "createdByUid": { "type": "string" },
+        "createdByName": { "type": "string" },
+        "createdByRole": { "type": "string", "enum": ["owner", "manager"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["fleetId", "tripId", "cabinNumber", "berthLabel", "photoBase64", "verifiedByOwner", "memberUids", "createdByUid", "createdByName", "createdByRole", "createdAt", "updatedAt"]
+    },
+    "NoFareRecord": {
+      "title": "NoFareRecord",
+      "description": "Person who did not pay fare / upload history with name, photo, and mobile number.",
+      "type": "object",
+      "properties": {
+        "fleetId": { "type": "string" },
+        "tripId": { "type": "string" },
+        "personName": { "type": "string" },
+        "mobileNumber": { "type": "string" },
+        "cabinNumber": { "type": "integer" },
+        "expectedFare": { "type": "number" },
+        "reasonOrNote": { "type": "string" },
+        "photoBase64": { "type": "string" },
+        "capturedLatitude": { "type": "number" },
+        "capturedLongitude": { "type": "number" },
+        "capturedLocationLabel": { "type": "string" },
+        "resolvedByOwner": { "type": "boolean" },
+        "memberUids": { "type": "array" },
+        "createdByUid": { "type": "string" },
+        "createdByName": { "type": "string" },
+        "createdByRole": { "type": "string", "enum": ["owner", "manager"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["fleetId", "tripId", "personName", "mobileNumber", "resolvedByOwner", "memberUids", "createdByUid", "createdByName", "createdByRole", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private user profile"
+    },
+    "/users/{userId}/memberships/{fleetId}": {
+      "schema": { "$ref": "#/entities/UserMembership" },
+      "description": "Fleet membership index for the user"
+    },
+    "/fleet_access_registry/{registryId}": {
+      "schema": { "$ref": "#/entities/FleetAccessRegistry" },
+      "description": "Shared Krishna Travels HQ coordinator allowing the 10 authorized accounts to locate the fleet"
+    },
+    "/fleets/{fleetId}": {
+      "schema": { "$ref": "#/entities/Fleet" },
+      "description": "Krishna Travels fleet workspace"
+    },
+    "/fleets/{fleetId}/owner_vault/{docId}": {
+      "schema": { "type": "object" },
+      "description": "Owner-only audit vault inaccessible to Managers"
+    },
+    "/fleets/{fleetId}/members/{memberUid}": {
+      "schema": { "$ref": "#/entities/FleetMember" },
+      "description": "Fleet members and roles (multiple owners and managers)"
+    },
+    "/fleets/{fleetId}/buses/{busId}": {
+      "schema": { "$ref": "#/entities/Bus" },
+      "description": "Fleet sleeper buses"
+    },
+    "/fleets/{fleetId}/trips/{tripId}": {
+      "schema": { "$ref": "#/entities/Trip" },
+      "description": "Per-trip operations header"
+    },
+    "/fleets/{fleetId}/attendance/{attendanceId}": {
+      "schema": { "$ref": "#/entities/StaffAttendance" },
+      "description": "Per-trip staff attendance with photos"
+    },
+    "/fleets/{fleetId}/expenses/{expenseId}": {
+      "schema": { "$ref": "#/entities/TripExpense" },
+      "description": "Per-trip diesel, toll, tax, and expenses"
+    },
+    "/fleets/{fleetId}/bookings/{bookingId}": {
+      "schema": { "$ref": "#/entities/PassengerBooking" },
+      "description": "Per-trip passenger bookings and billing"
+    },
+    "/fleets/{fleetId}/compartment_photos/{photoId}": {
+      "schema": { "$ref": "#/entities/CompartmentPhoto" },
+      "description": "Per-trip 30-cabin sleeper compartment passenger confirmation photos"
+    },
+    "/fleets/{fleetId}/no_fare_records/{recordId}": {
+      "schema": { "$ref": "#/entities/NoFareRecord" },
+      "description": "Passengers who did not give fare / upload history (name, photo, mobile number)"
+    }
+  }
+}
